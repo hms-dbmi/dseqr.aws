@@ -14,7 +14,7 @@ export class DseqrEfsStack extends cdk.Stack {
     let { vpc } = props;
 
     // user configurable parameters (e.g. cdk deploy -c instance_type="r5.large")
-    const keepEFS = this.node.tryGetContext("keep_efs") || 1;
+    const keepEFS = this.node.tryGetContext("keep_efs") || true;
     const fileSystemId = this.node.tryGetContext("efs_id");
     const EFSSecurityGroupId = this.node.tryGetContext("efs_sg_id");
 
@@ -27,8 +27,9 @@ export class DseqrEfsStack extends cdk.Stack {
     }
 
     // are we keeping EFS on cdk destroy? default is TRUE
-    const removalPolicy =
-      keepEFS == 1 ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    const removalPolicy = keepEFS
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
 
     // script that is run on startup
 

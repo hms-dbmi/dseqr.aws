@@ -60,6 +60,7 @@ else
   ln -s /etc/nginx/sites-available/$HOST_URL /etc/nginx/sites-enabled/
   rm /etc/nginx/sites-enabled/default
   systemctl restart nginx
+  cd /home/ubuntu/drugseqr.sp
 fi
 
 docker build -t drugseqr.sp .
