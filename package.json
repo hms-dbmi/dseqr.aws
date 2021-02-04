@@ -26,6 +26,7 @@
     "@aws-cdk/aws-cognito": "^1.87.1",
     "@aws-cdk/aws-efs": "^1.87.1",
     "@aws-cdk/aws-elasticloadbalancingv2": "^1.87.1",
+    "@aws-cdk/aws-elasticloadbalancingv2-actions": "^1.87.1",
     "@aws-cdk/aws-route53": "^1.87.1",
     "@aws-cdk/aws-route53-targets": "^1.87.1",
     "@aws-cdk/core": "^1.87.1",

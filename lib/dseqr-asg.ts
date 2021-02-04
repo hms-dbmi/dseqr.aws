@@ -1,6 +1,5 @@
 import * as ec2 from "@aws-cdk/aws-ec2";
 import * as cdk from "@aws-cdk/core";
-import * as fs from "fs";
 import * as route53 from "@aws-cdk/aws-route53";
 import * as autoscaling from "@aws-cdk/aws-autoscaling";
 import * as elbv2 from "@aws-cdk/aws-elasticloadbalancingv2";
@@ -8,21 +7,42 @@ import * as acm from "@aws-cdk/aws-certificatemanager";
 import * as alias from "@aws-cdk/aws-route53-targets";
 import * as efs from "@aws-cdk/aws-efs";
 import * as cognito from "@aws-cdk/aws-cognito";
+import * as route53_targets from "@aws-cdk/aws-route53-targets";
+import * as fs from "fs";
 
-export class DseqrAwsStackASG extends cdk.Stack {
-  constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+interface DseqrASGProps extends cdk.StackProps {
+  zone: route53.IHostedZone;
+  certificate: acm.ICertificate;
+  userPool: cognito.IUserPool;
+  userPoolClient: cognito.IUserPoolClient;
+  userPoolClientSecret: string;
+  vpc: ec2.IVpc;
+  fileSystem: efs.IFileSystem;
+}
+
+export class DseqrAsgStack extends cdk.Stack {
+  constructor(scope: cdk.App, id: string, props: DseqrASGProps) {
     super(scope, id, props);
+
+    const {
+      zone,
+      certificate,
+      userPool,
+      userPoolClient,
+      userPoolClientSecret,
+      vpc,
+      fileSystem,
+    } = props;
 
     // user configurable parameters (e.g. cdk deploy -c instance_type="r5.large")
     const instanceType =
       this.node.tryGetContext("instance_type") || "r5.xlarge";
-    const volumeSize = this.node.tryGetContext("volume_size") || 16;
+    const volumeSize = this.node.tryGetContext("volume_size") || 14;
     const keyName = this.node.tryGetContext("ssh_key_name");
     const zoneName = this.node.tryGetContext("domain_name");
     const hostedZoneId = this.node.tryGetContext("zone_id");
-    const keepEFS = this.node.tryGetContext("keep_efs") || 1;
-    const fileSystemId = this.node.tryGetContext("efs_id");
-    const EFSSecurityGroupId = this.node.tryGetContext("efs_sg_id");
+    const authCertificateArn = this.node.tryGetContext("auth_cert_arn");
+    const exampleData = this.node.tryGetContext("example_data") || true;
 
     // check for ssh key
     if (typeof keyName == "undefined") {
@@ -34,60 +54,60 @@ export class DseqrAwsStackASG extends cdk.Stack {
       throw "must provide both domain_name and zone_id to setup existing domain";
     }
 
-    // both efs is and efs security group id or neither
-    if (
-      (!fileSystemId && EFSSecurityGroupId) ||
-      (fileSystemId && !EFSSecurityGroupId)
-    ) {
-      throw "must provide both efs_id and efs_sg_id to use existing EFS";
-    }
+    // create a load balancer
+    const lb = new elbv2.ApplicationLoadBalancer(this, "LB", {
+      vpc,
+      internetFacing: true,
+    });
 
-    // are we keeping EFS on cdk destroy? default is TRUE
-    const removalPolicy =
-      keepEFS == 1 ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    // add A record for domain to direct to load balencer
+    const DseqrARecord = new route53.ARecord(this, "ARecord", {
+      zone: zone,
+      target: route53.RecordTarget.fromAlias(new alias.LoadBalancerTarget(lb)),
+    });
 
-    // script that is run on startup
-
-    // VPC
-    const vpc = new ec2.Vpc(this, "VPC", { natGateways: 0 });
-
-    // EFS setup (existing or new)
-    let fileSystem;
-    if (fileSystemId && EFSSecurityGroupId) {
-      // import existing EFS
-      fileSystem = efs.FileSystem.fromFileSystemAttributes(this, "EFS", {
-        fileSystemId: "sdfs",
-        securityGroup: ec2.SecurityGroup.fromSecurityGroupId(
-          this,
-          "EFSSecurityGroup",
-          EFSSecurityGroupId
-        ),
-      });
+    // using custom domain for userpool authentication requires certificate in us-east-1
+    let authCertificate;
+    if (authCertificateArn) {
+      authCertificate = acm.Certificate.fromCertificateArn(
+        this,
+        "authCertificate",
+        authCertificateArn
+      );
     } else {
-      // new EFS to share between instances
-      fileSystem = new efs.FileSystem(this, "EFS", {
-        vpc,
-        lifecyclePolicy: efs.LifecyclePolicy.AFTER_7_DAYS, // transition to infrequent access
-        removalPolicy,
-      });
-      fileSystem.addAccessPoint("AcessPoint");
+      authCertificate = new acm.DnsValidatedCertificate(
+        this,
+        "authCertificate",
+        {
+          domainName: `auth.${zoneName}`,
+          hostedZone: zone,
+          region: "us-east-1",
+        }
+      );
     }
 
-    fileSystem.connections.allowDefaultPortFromAnyIpv4();
+    // user supplied domain for signin page
+    // this depends on A record for root domain
+    const userPoolDomain = new cognito.UserPoolDomain(this, "UserPoolDomain", {
+      userPool,
+      // cognitoDomain: {
+      //   domainPrefix: "dseqr",
+      // },
+      customDomain: {
+        domainName: `auth.${zoneName}`,
+        certificate: authCertificate,
+      },
+    });
 
-    // get ssl certificate for domain name
-    const zone = route53.HostedZone.fromHostedZoneAttributes(
-      this,
-      "HostedZone",
-      {
-        zoneName,
-        hostedZoneId,
-      }
-    );
+    userPoolDomain.node.addDependency(DseqrARecord);
 
-    const cert = new acm.Certificate(this, "Certificate", {
-      domainName: zoneName,
-      validation: acm.CertificateValidation.fromDns(zone),
+    // A record for signin page
+    new route53.ARecord(this, "UserPoolCloudFrontAliasRecord", {
+      zone,
+      recordName: `auth.${zoneName}`,
+      target: route53.RecordTarget.fromAlias(
+        new route53_targets.UserPoolDomainTarget(userPoolDomain)
+      ),
     });
 
     const userData = ec2.UserData.forLinux();
@@ -108,10 +128,20 @@ export class DseqrAwsStackASG extends cdk.Stack {
       "mount -a -t efs,nfs4 defaults"
     );
 
+    // variables to setup application.yml for cognito
+    userData.addCommands(
+      `USE_COGNITO=true`,
+      `EXAMPLE_DATA=${exampleData}`,
+      `REGION=us-east-2`,
+      `USER_POOL_ID=${userPool.userPoolId}`,
+      `AUTH_DOMAIN=auth.${zoneName}`,
+      `CLIENT_ID=${userPoolClient.userPoolClientId}`,
+      `HOST_URL=${zoneName}`,
+      `CLIENT_SECRET=${userPoolClientSecret}`
+    );
+
     // also replace drugseqr.com in configuration script
-    let startupScript = fs.readFileSync("lib/configure.sh", "utf8");
-    const regex = new RegExp(zoneName, "g");
-    startupScript = startupScript.replace(regex, "g");
+    const startupScript = fs.readFileSync("lib/configure.sh", "utf8");
     userData.addCommands(startupScript);
 
     // allow SSH onto instances
@@ -132,7 +162,7 @@ export class DseqrAwsStackASG extends cdk.Stack {
       machineImage: new ec2.GenericLinuxImage({
         "us-east-2": "ami-0dd9f0e7df0f0a138",
       }),
-      minCapacity: 2,
+      minCapacity: 1,
       maxCapacity: 4,
       userData,
       associatePublicIpAddress: true,
@@ -152,19 +182,13 @@ export class DseqrAwsStackASG extends cdk.Stack {
       targetUtilizationPercent: 70,
     });
 
-    // create a load balancer
-    const lb = new elbv2.ApplicationLoadBalancer(this, "LB", {
-      vpc,
-      internetFacing: true,
-    });
-
     // redirect to 443
     lb.addRedirect();
 
     // listen on 443
     const listener = lb.addListener("Listener", {
       port: 443,
-      certificates: [cert],
+      certificates: [certificate],
     });
 
     listener.connections.allowDefaultPortFromAnyIpv4("Open to the world");
@@ -174,12 +198,6 @@ export class DseqrAwsStackASG extends cdk.Stack {
       port: 80,
       targets: [autoScalingGroup],
       stickinessCookieDuration: cdk.Duration.days(3), // requests from same session to same instance
-    });
-
-    // add A record for domain to direct to load balencer
-    new route53.ARecord(this, "ARecord", {
-      zone: zone,
-      target: route53.RecordTarget.fromAlias(new alias.LoadBalancerTarget(lb)),
     });
   }
 }
