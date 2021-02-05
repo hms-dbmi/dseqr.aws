@@ -80,12 +80,13 @@ docker run --rm \
   alexvpickering/drugseqr R -e "drugseqr::init_drugseqr('example')"
 
 # get data for example app
+cd /srv/drugseqr/
 if [ "$EXAMPLE_DATA" = true ] && [ ! -f "example_data.tar.gz" ]; then
-  cd /srv/drugseqr/
   rm -rf example
   wget https://drugseqr.s3.us-east-2.amazonaws.com/example_data.tar.gz
   tar -xzvf example_data.tar.gz
   rm example_data.tar.gz
+  touch example_data.tar.gz # so that don't re-download
 fi
 
 # run app
