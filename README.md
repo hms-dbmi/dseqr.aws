@@ -7,6 +7,7 @@ domain name, associated zone id, and ssh key name. Then run:
 # install npm packages
 npm install
 
+# deploy app, skipping IAM review
 cdk deploy DseqrAsgStack --require-approval=never
 ```
 
@@ -22,7 +23,7 @@ Wait 10 minutes, navigate to `yourdomain.com`, and you should have:
 ## No one using it?
 
 ```bash
-# to delete all resources
+# delete all resources :()
 cdk destroy --all
 ```
 
