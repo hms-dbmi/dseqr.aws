@@ -1,0 +1,7 @@
+{
+    "ssh_key_name": "ohio-xps15",
+    "domain_name": "drugseqr.com",
+    "zone_id": "ZEPQXLTGP2K0S",
+    "keep_efs": false,
+    "get_cert": false
+}

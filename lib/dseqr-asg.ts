@@ -179,7 +179,8 @@ export class DseqrAsgStack extends cdk.Stack {
     });
 
     autoScalingGroup.scaleOnCpuUtilization("ScaleToCPU", {
-      targetUtilizationPercent: 70,
+      cooldown: cdk.Duration.seconds(600),
+      targetUtilizationPercent: 60,
     });
 
     // redirect to 443
