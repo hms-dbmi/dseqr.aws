@@ -19,14 +19,14 @@ Wait 10 minutes, navigate to `yourdomain.com`, and you should have:
 * cognito layer for user management and authorization
 
 
-No one using it?
+## No one using it?
 
 ```bash
 # to delete all resources
 cdk destroy --all
 ```
 
-Notes:
+## Notes:
 
 * EFS is retained on `destroy` (retention policy doesn't seem to be respected)
 * AWS can be a bit stingy about SSL certs (20 per year). They give
