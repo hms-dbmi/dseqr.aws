@@ -1,4 +1,4 @@
-## Deploying dseqr app
+## deploying dseqr app
 
 clone the repo and update `cdk.context.json` to reflect your
 domain name, associated zone id, and ssh key name. Then run:
@@ -20,10 +20,10 @@ Wait 10 minutes, navigate to `yourdomain.com`, and you should have:
 * cognito layer for user management and authorization
 
 
-## No one using it?
+## no one using it?
 
 ```bash
-# delete all resources :()
+# delete all resources :(
 cdk destroy --all
 ```
 
